@@ -1,0 +1,316 @@
+# =============================================================================
+# docker-compose.yml
+# =============================================================================
+#
+# WHAT IS THIS FILE?
+# This file defines the entire DAWS_BAS stack as Docker containers.
+# Docker Compose reads this file and starts all services with one command:
+#
+#   docker compose up -d
+#
+# The "-d" flag runs everything in the background (detached mode).
+#
+# WHAT IS DOCKER COMPOSE?
+# Docker lets you run applications in isolated containers.
+# Docker Compose lets you define and manage multiple containers together.
+# Instead of starting each service manually, one file describes everything.
+#
+# This is the "single machine" deployment option for DAWS_BAS.
+# The other option is individual Proxmox LXC containers (one per service).
+#
+# IMPORTANT NOTE ABOUT BACNET:
+# The Protocol Gateway needs to send UDP broadcast packets on port 47808
+# to discover BACnet devices. Docker's default networking blocks this.
+# The gateway uses "network_mode: host" which gives it direct access to
+# the host machine's network interfaces - the same as running it natively.
+# This means BACnet discovery works, BUT the gateway bypasses Docker's
+# internal DNS (you can't use service names like "rabbitmq" in gateway env vars -
+# you must use the actual IP address from your .env file instead).
+#
+# HOW TO USE:
+#   1. Copy .env.example to .env:   cp .env.example .env
+#   2. Edit .env with your settings: nano .env
+#   3. Start everything:             docker compose up -d
+#   4. Check status:                 docker compose ps
+#   5. View logs:                    docker compose logs -f
+#   6. Stop everything:              docker compose down
+#
+# USEFUL URLS AFTER STARTING:
+#   RabbitMQ UI:  http://localhost:15672  (username/password from .env)
+#   InfluxDB UI:  http://localhost:8086
+#   Grafana UI:   http://localhost:3000   (admin username/password from .env)
+#   Neo4j UI:     http://localhost:7474
+#
+# =============================================================================
+
+
+# "services:" is the top-level key that lists all containers to run
+services:
+
+  # ===========================================================================
+  # RABBITMQ
+  # The message broker - the central nervous system of DAWS_BAS.
+  # All data from all field devices flows through RabbitMQ.
+  # ===========================================================================
+  rabbitmq:
+
+    # Which Docker image to use
+    # "rabbitmq:3-management" is the official RabbitMQ image WITH the management
+    # web UI included. The "3" means RabbitMQ version 3.x (latest stable)
+    image: rabbitmq:3-management
+
+    # A friendly name for this container (shows in "docker ps" output)
+    container_name: daws-rabbitmq
+
+    # Restart policy: what to do if the container stops
+    # "unless-stopped" = restart automatically unless you manually stop it
+    # Other options: "always", "on-failure", "no"
+    restart: unless-stopped
+
+    # Environment variables passed into the container
+    # These configure RabbitMQ on first startup
+    # ${VARIABLE} reads from your .env file
+    environment:
+      RABBITMQ_DEFAULT_USER:  ${RABBITMQ_USER}    # Admin username to create
+      RABBITMQ_DEFAULT_PASS:  ${RABBITMQ_PASS}    # Admin password
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST}   # Default virtual host to create
+
+    # Port mappings: "host_port:container_port"
+    # This makes the container's ports accessible on your machine
+    ports:
+      - "5672:5672"       # AMQP protocol port - services connect here to send/receive messages
+      - "15672:15672"     # Management web UI - open http://localhost:15672 in your browser
+
+    # Volumes: where to persist data
+    # Without this, all data is lost when the container restarts
+    # "rabbitmq-data" refers to the named volume defined at the bottom of this file
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq    # RabbitMQ stores its data here
+
+    # Health check: Docker regularly runs this command to see if RabbitMQ is healthy
+    # Other services use "depends_on: condition: service_healthy" to wait for this
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]   # Run this command to check health
+      interval: 10s     # Check every 10 seconds
+      timeout: 5s       # Give the check 5 seconds to complete
+      retries: 5        # Mark as unhealthy after 5 consecutive failures
+
+
+  # ===========================================================================
+  # INFLUXDB
+  # The time-series database that stores all historical point data.
+  # A time-series database is optimized for storing values with timestamps -
+  # exactly what sensor and BAS data looks like.
+  # ===========================================================================
+  influxdb:
+
+    # Official InfluxDB v2.7 image
+    # v2 uses a token-based auth system and the Flux query language
+    image: influxdb:2.7
+
+    container_name: daws-influxdb
+    restart: unless-stopped
+
+    environment:
+      # These variables are read by InfluxDB on FIRST STARTUP ONLY
+      # They set up the initial admin user, org, and bucket automatically
+      # After first startup, InfluxDB ignores them (config is stored in its database)
+      DOCKER_INFLUXDB_INIT_MODE:         setup           # Run initial setup automatically
+      DOCKER_INFLUXDB_INIT_USERNAME:     admin           # Admin UI username
+      DOCKER_INFLUXDB_INIT_PASSWORD:     ${INFLUXDB_TOKEN}   # Admin UI password
+      DOCKER_INFLUXDB_INIT_ORG:          ${INFLUXDB_ORG}     # Organization name
+      DOCKER_INFLUXDB_INIT_BUCKET:       ${INFLUXDB_BUCKET}  # Default bucket (database) name
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN:  ${INFLUXDB_TOKEN}   # API token for authentication
+
+    ports:
+      - "8086:8086"     # InfluxDB API and web UI port
+
+    volumes:
+      - influxdb-data:/var/lib/influxdb2  # InfluxDB stores all time-series data here
+
+    healthcheck:
+      test: ["CMD", "influx", "ping"]     # influx ping checks if InfluxDB is responding
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+
+  # ===========================================================================
+  # TELEGRAF
+  # The data collector that bridges RabbitMQ and InfluxDB.
+  # It subscribes to RabbitMQ and writes received messages to InfluxDB.
+  # Config is in services/telegraf/telegraf.conf
+  # ===========================================================================
+  telegraf:
+
+    # Official Telegraf image (always latest stable)
+    image: telegraf:latest
+
+    container_name: daws-telegraf
+    restart: unless-stopped
+
+    # depends_on tells Docker Compose to wait for these services to be healthy
+    # before starting Telegraf. Without this, Telegraf might start before
+    # RabbitMQ and InfluxDB are ready, causing connection failures.
+    depends_on:
+      rabbitmq:
+        condition: service_healthy    # Wait until RabbitMQ passes its health check
+      influxdb:
+        condition: service_healthy    # Wait until InfluxDB passes its health check
+
+    # Mount the Telegraf config file from your local filesystem into the container
+    # Format: "local_path:container_path:options"
+    # ":ro" means read-only - the container can read but not modify the config
+    volumes:
+      - ./services/telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro
+
+    # Pass variables that telegraf.conf references with ${VARIABLE} syntax
+    environment:
+      INFLUXDB_TOKEN:   ${INFLUXDB_TOKEN}
+      INFLUXDB_ORG:     ${INFLUXDB_ORG}
+      INFLUXDB_BUCKET:  ${INFLUXDB_BUCKET}
+      RABBITMQ_USER:    ${RABBITMQ_USER}
+      RABBITMQ_PASS:    ${RABBITMQ_PASS}
+      RABBITMQ_VHOST:   ${RABBITMQ_VHOST}
+
+
+  # ===========================================================================
+  # GRAFANA
+  # The visualization layer. Connects to InfluxDB and displays dashboards.
+  # You build dashboards in the Grafana web UI at http://localhost:3000
+  # ===========================================================================
+  grafana:
+
+    # Official Grafana image (latest stable)
+    image: grafana/grafana:latest
+
+    container_name: daws-grafana
+    restart: unless-stopped
+
+    # Wait for InfluxDB to be ready before starting Grafana
+    # Grafana needs InfluxDB to load its auto-provisioned datasource
+    depends_on:
+      - influxdb
+
+    environment:
+      GF_SECURITY_ADMIN_USER:     ${GRAFANA_ADMIN_USER}   # Grafana web UI username
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASS}   # Grafana web UI password
+
+    ports:
+      - "3000:3000"   # Grafana web UI - open http://localhost:3000 in your browser
+
+    volumes:
+      # Grafana's internal database (stores dashboards, users, settings)
+      - grafana-data:/var/lib/grafana
+
+      # Provisioning directory: Grafana reads these YAML files on startup
+      # to automatically configure datasources and dashboards
+      # This auto-configures the InfluxDB datasource so you don't have to
+      # manually add it in the UI
+      - ./services/grafana/provisioning:/etc/grafana/provisioning
+
+
+  # ===========================================================================
+  # NEO4J
+  # The graph database that models device relationships.
+  # Used to represent: which devices are in which rooms, on which floors,
+  # connected to which systems, managed by which controllers.
+  # This is the foundation of a digital twin of your building.
+  # ===========================================================================
+  neo4j:
+
+    # Official Neo4j image (latest stable)
+    image: neo4j:latest
+
+    container_name: daws-neo4j
+    restart: unless-stopped
+
+    environment:
+      # NEO4J_AUTH sets the username and password in "user/password" format
+      NEO4J_AUTH: ${NEO4J_USER}/${NEO4J_PASS}
+
+    ports:
+      - "7474:7474"   # Neo4j Browser web UI - open http://localhost:7474 to explore the graph
+      - "7687:7687"   # Bolt protocol port - applications connect here to run Cypher queries
+
+    volumes:
+      - neo4j-data:/data    # Neo4j stores its graph database here
+
+
+  # ===========================================================================
+  # PROTOCOL GATEWAY
+  # Discovers field devices (BACnet, Modbus, MQTT, OPC-UA, LON)
+  # and publishes their data to RabbitMQ.
+  # Built from source using the Dockerfile in services/protocol-gateway/
+  # ===========================================================================
+  protocol-gateway:
+
+    # "build:" means build the image from a Dockerfile instead of pulling from Docker Hub
+    # "./services/protocol-gateway" is the directory containing the Dockerfile
+    build: ./services/protocol-gateway
+
+    container_name: daws-gateway
+    restart: unless-stopped
+
+    # Wait for RabbitMQ to be healthy before starting the gateway
+    # The gateway tries to connect to RabbitMQ on startup - if RabbitMQ isn't
+    # ready yet, the gateway would fail to start
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+    # CRITICAL: Use the host network instead of Docker's internal network
+    # This is required for BACnet to work.
+    # BACnet uses UDP broadcasts on port 47808. Docker's internal network
+    # creates a virtual network that blocks broadcasts from reaching real
+    # BACnet devices on your physical network.
+    # "network_mode: host" gives the container direct access to the host's
+    # network interfaces, allowing BACnet broadcasts to work correctly.
+    #
+    # SIDE EFFECT: When using network_mode: host, Docker's internal DNS
+    # doesn't work. You can't use service names like "rabbitmq" in the
+    # RABBITMQ_HOST variable below - you must use the actual IP address.
+    # That's why RABBITMQ_HOST uses ${RABBITMQ_IP} (the real IP) while
+    # other services use "rabbitmq" (the Docker service name).
+    network_mode: host
+
+    environment:
+      # RabbitMQ connection - must use real IP because we're in host network mode
+      RABBITMQ_HOST:      ${RABBITMQ_IP}          # e.g. "192.168.30.13" (from .env)
+      RABBITMQ_USER:      ${RABBITMQ_USER}
+      RABBITMQ_PASS:      ${RABBITMQ_PASS}
+      RABBITMQ_VHOST:     ${RABBITMQ_VHOST}
+      RABBITMQ_EXCHANGE:  ${RABBITMQ_EXCHANGE}
+
+      # BACnet settings for the gateway's own BACnet identity
+      BACNET_NETWORK:     ${BACNET_NETWORK}        # e.g. "192.168.30.0/24"
+      BACNET_DEVICE_ID:   ${BACNET_DEVICE_ID}      # e.g. "9001"
+
+      # How often to poll devices (in seconds)
+      GATEWAY_POLL_INTERVAL: ${GATEWAY_POLL_INTERVAL}
+
+      # Timezone for log timestamps
+      TZ: ${TZ}
+
+      # Optional: Set these to enable additional protocol handlers
+      # MODBUS_DEVICES: '[{"id":"chiller-01","host":"192.168.30.50",...}]'
+      # MQTT_BROKER: "192.168.30.55"
+      # OPCUA_SERVERS: '[{"id":"ahu-01","url":"opc.tcp://192.168.30.56:4840",...}]'
+      # LON_SERVERS: '[{"id":"vav-301","host":"192.168.30.60",...}]'
+
+
+# =============================================================================
+# VOLUMES
+# Named volumes are managed by Docker and persist data between container restarts.
+# Without volumes, all data is lost every time a container is removed.
+# Docker stores these in /var/lib/docker/volumes/ on the host machine.
+#
+# To see your volumes:       docker volume ls
+# To inspect a volume:       docker volume inspect daws_bas_influxdb-data
+# To delete all volumes:     docker compose down -v  (WARNING: deletes all data!)
+# =============================================================================
+volumes:
+  rabbitmq-data:    # RabbitMQ message queue data and configuration
+  influxdb-data:    # InfluxDB time-series data (all your point history)
+  grafana-data:     # Grafana dashboards, users, and settings
+  neo4j-data:       # Neo4j graph database (device relationships)

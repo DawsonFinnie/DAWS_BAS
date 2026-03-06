@@ -1,0 +1,98 @@
+# =============================================================================
+# services/grafana/provisioning/datasources/influxdb.yml
+# =============================================================================
+#
+# WHAT IS THIS FILE?
+# This is a Grafana provisioning file. It tells Grafana to automatically
+# configure InfluxDB as a data source when Grafana starts for the first time.
+#
+# WHAT IS GRAFANA PROVISIONING?
+# Normally you'd add a data source manually by logging into Grafana's web UI,
+# clicking "Add data source", filling in the form, and saving.
+# Provisioning lets you skip that by describing the data source in a YAML file.
+# When Grafana starts, it reads files from the provisioning directory and
+# automatically sets up whatever is described in them.
+#
+# This means:
+#   - Fresh installs are pre-configured with no manual steps
+#   - Your data source config is version-controlled in Git
+#   - Destroying and recreating the Grafana container restores everything
+#
+# WHERE DOES GRAFANA LOOK FOR THIS FILE?
+# In docker-compose.yml we mount this directory into the container:
+#   ./services/grafana/provisioning → /etc/grafana/provisioning
+# Grafana automatically scans /etc/grafana/provisioning/datasources/
+# for any .yml files and applies them on startup.
+#
+# WHAT IS INFLUXDB FLUX?
+# InfluxDB v2 uses a query language called "Flux" (instead of InfluxQL from v1).
+# Flux is more powerful but has a different syntax. In Grafana you write
+# Flux queries to pull data for your dashboards.
+# Example Flux query to get traffic light state:
+#
+#   from(bucket: "bas")
+#     |> range(start: -1h)
+#     |> filter(fn: (r) => r["point_name"] == "red_light")
+#     |> last()
+#
+# =============================================================================
+
+
+# Grafana provisioning API version
+# Always "1" for current Grafana versions
+apiVersion: 1
+
+
+# List of data sources to provision
+# You can add multiple data sources here as a YAML list (each starts with -)
+datasources:
+
+  - # The name shown in Grafana's UI when selecting a data source for a panel
+    name: InfluxDB
+
+    # The type of data source
+    # Grafana has built-in support for InfluxDB, Prometheus, MySQL, and many others
+    type: influxdb
+
+    # How Grafana accesses the data source
+    # "proxy" means Grafana's SERVER makes the request to InfluxDB
+    # (as opposed to "direct" where the user's BROWSER makes the request)
+    # "proxy" is almost always the right choice — it keeps credentials server-side
+    access: proxy
+
+    # The URL of the InfluxDB server
+    # In Docker Compose, "influxdb" resolves to the influxdb container's IP
+    # In LXC deployment, change this to: http://192.168.30.14:8086
+    url: http://influxdb:8086
+
+    # jsonData contains data source type-specific settings
+    jsonData:
+
+      # Tell Grafana to use the Flux query language (required for InfluxDB v2)
+      # InfluxDB v1 used "InfluxQL" — v2 uses "Flux"
+      # Always set this to "Flux" when using InfluxDB 2.x
+      version: Flux
+
+      # The InfluxDB organization to connect to
+      # Must match INFLUXDB_ORG in your .env file
+      # ${INFLUXDB_ORG} is replaced by Grafana using the environment variable
+      organization: ${INFLUXDB_ORG}
+
+      # The default bucket (like a database) to query
+      # Must match INFLUXDB_BUCKET in your .env file
+      defaultBucket: ${INFLUXDB_BUCKET}
+
+    # secureJsonData contains sensitive settings that Grafana stores encrypted
+    # These are separate from jsonData to prevent credentials appearing in logs
+    secureJsonData:
+
+      # The InfluxDB API token for authentication
+      # Must match INFLUXDB_TOKEN in your .env file
+      # Using an environment variable here keeps the actual token out of this file
+      # so it is safe to commit this file to Git
+      token: ${INFLUXDB_TOKEN}
+
+    # Mark this as the default data source
+    # When you create a new dashboard panel, Grafana will pre-select this source
+    # If you have multiple data sources, only one should have isDefault: true
+    isDefault: true
