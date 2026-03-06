@@ -213,16 +213,16 @@ NET_CONFIG="name=eth0,bridge=${BRIDGE},ip=${IP},gw=${GATEWAY}"
 echo -e "${YELLOW}Creating LXC container ${CT_ID}...${NC}"
 
 pct create $CT_ID $TEMPLATE \
-    --hostname  $HOSTNAME \          # Container hostname
-    --storage   $STORAGE \           # Where to store the container's disk
-    --rootfs    ${STORAGE}:4 \       # Root disk size: 4GB
-    --memory    1024 \               # RAM: 1024MB (1GB) - sufficient for RabbitMQ
-    --cores     2 \                  # CPU cores
-    --net0      $NET_CONFIG \        # Network settings built above
-    --unprivileged 1 \               # Run as unprivileged container (more secure)
-    --features  nesting=1 \          # Allow nested containers (needed for some features)
-    --start     1 \                  # Start the container immediately after creation
-    --onboot    1                    # Start the container automatically when Proxmox boots
+    --hostname $HOSTNAME \
+    --storage $STORAGE \
+    --rootfs ${STORAGE}:4 \
+    --memory 1024 \
+    --cores 2 \
+    --net0 $NET_CONFIG \
+    --unprivileged 1 \
+    --features nesting=1 \
+    --start 1 \
+    --onboot 1
 
 # Wait for the container to fully start before running commands inside it
 echo -e "${YELLOW}Waiting for container to start...${NC}"
