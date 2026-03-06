@@ -6,34 +6,29 @@
 # WHAT IS THIS FILE?
 # This script runs INSIDE the RabbitMQ LXC container.
 # It is called automatically by install.sh after the container is created.
-# You should not need to run this manually.
 #
 # WHAT DOES IT DO?
-#   1. Fixes locale warnings (cosmetic but annoying without this)
-#   2. Installs prerequisite packages
-#   3. Adds the official Erlang repository
-#   4. Adds the official RabbitMQ repository
-#   5. Installs Erlang (required by RabbitMQ) and RabbitMQ server
-#   6. Enables the management web UI plugin
-#   7. Starts RabbitMQ and enables it to start on boot
-#   8. Creates the DAWS_BAS user, virtual host, and permissions
-#   9. Removes the default insecure "guest" user
+#   1. Fixes locale warnings
+#   2. Installs prerequisites
+#   3. Adds the official RabbitMQ + Erlang repositories via Cloudsmith
+#      (RabbitMQ's current recommended install method as of 2024/2025)
+#   4. Installs a compatible Erlang version and RabbitMQ server
+#   5. Enables the management web UI plugin
+#   6. Starts RabbitMQ and enables it on boot
+#   7. Creates the DAWS_BAS user, virtual host, and permissions
+#   8. Removes the default insecure guest user
 #
-# WHY DO WE INSTALL ERLANG SEPARATELY?
-# RabbitMQ is written in Erlang, so Erlang must be installed first.
-# Ubuntu's default apt repository has an older version of Erlang that is
-# not compatible with recent RabbitMQ versions.
-# We add the official Erlang Solutions repository to get a compatible version.
+# WHY CLOUDSMITH?
+# RabbitMQ's official documentation now recommends using their Cloudsmith
+# hosted repositories instead of packagecloud.io (which is deprecated)
+# or Erlang Solutions (which has reliability issues).
+# Cloudsmith provides both the correct Erlang version and RabbitMQ together,
+# ensuring compatibility between them.
 #
-# WHY THE NEW REPO METHOD?
-# The old method used "apt-key add" and packagecloud.io which are both
-# deprecated. The modern approach uses "gpg --dearmor" to store keys in
-# /usr/share/keyrings/ and references them with [signed-by=...] in the
-# apt source list. This is the currently recommended method.
+# Reference: https://www.rabbitmq.com/docs/install-debian
 #
 # =============================================================================
 
-# Stop the script immediately if any command fails
 set -e
 
 echo "============================================"
@@ -43,103 +38,85 @@ echo "============================================"
 
 # =============================================================================
 # STEP 0: Fix locale warnings
-# The fresh Ubuntu LXC template is missing locale configuration.
-# Without this, many commands print warnings like:
-#   "perl: warning: Setting locale failed"
-# These are harmless but noisy. This step silences them.
+# Fresh Ubuntu LXC templates are missing locale configuration.
+# This causes harmless but noisy "perl: warning: Setting locale failed" messages.
+# We fix it before anything else so all subsequent output is clean.
 # =============================================================================
 echo "Step 0/5: Fixing locale configuration..."
 
 apt-get install -y -qq locales
-
-# locale-gen generates the locale files for en_US.UTF-8
-# UTF-8 is the standard character encoding that supports all languages
 locale-gen en_US.UTF-8
-
-# Set the system default locale
 update-locale LANG=en_US.UTF-8
 
 
 # =============================================================================
 # STEP 1: Install prerequisite packages
-# These are needed to add new repositories and download their signing keys
+# curl    - downloads files and GPG keys from URLs
+# gnupg   - handles GPG key operations for package verification
+# apt-transport-https - allows apt to use HTTPS repository URLs
 # =============================================================================
 echo "Step 1/5: Installing prerequisites..."
 
 apt-get update -qq
-
-# curl               - downloads files from URLs (used to fetch GPG keys)
-# gnupg              - GNU Privacy Guard - handles GPG key operations
-# apt-transport-https - allows apt to fetch packages over HTTPS connections
 apt-get install -y -qq curl gnupg apt-transport-https
 
 
 # =============================================================================
-# STEP 2: Add official Erlang and RabbitMQ repositories
+# STEP 2: Add Cloudsmith repositories for Erlang and RabbitMQ
 #
-# WHY TWO REPOSITORIES?
-# RabbitMQ is written in the Erlang programming language, so Erlang must be
-# installed before RabbitMQ. Ubuntu's built-in Erlang version is often too old
-# for the latest RabbitMQ, so we add the official Erlang Solutions repo.
+# RabbitMQ's official recommended install method uses two Cloudsmith repos:
+#   1. rabbitmq/rabbitmq-erlang  - provides a compatible Erlang version
+#   2. rabbitmq/rabbitmq-server  - provides RabbitMQ itself
 #
-# HOW GPG KEY VERIFICATION WORKS:
-# Each repository has a GPG signing key. When apt downloads packages,
-# it verifies the package was signed by that key — this proves the package
-# is genuine and hasn't been tampered with.
+# This ensures the Erlang and RabbitMQ versions are always compatible with
+# each other, which is the most common source of installation failures.
 #
-# The modern method:
-#   1. Download the key with curl
-#   2. Convert it to binary format with "gpg --dearmor"
-#   3. Save it to /usr/share/keyrings/
-#   4. Reference it in the apt source line with [signed-by=path/to/key.gpg]
-#
-# This replaces the old "apt-key add" method which is now deprecated.
+# GPG KEY VERIFICATION:
+# Each repo's signing key is downloaded and stored in /usr/share/keyrings/
+# The apt source entry references the key with [signed-by=...] so apt can
+# verify packages haven't been tampered with.
+# This is the modern replacement for the deprecated "apt-key add" method.
 # =============================================================================
-echo "Step 2/5: Adding Erlang and RabbitMQ repositories..."
+echo "Step 2/5: Adding Cloudsmith Erlang and RabbitMQ repositories..."
 
-# --- Erlang repository ---
-# Download the Erlang Solutions GPG key and convert it to binary (.gpg) format
-# curl -fsSL = fetch silently, follow redirects, fail on HTTP errors
-# | gpg --dearmor = pipe the key through gpg to convert from ASCII to binary
-# -o = write output to this file path
-curl -fsSL https://packages.erlang-solutions.com/ubuntu/erlang_solutions.asc \
-    | gpg --dearmor -o /usr/share/keyrings/erlang.gpg
+# Create keyrings directory if it doesn't exist
+mkdir -p /usr/share/keyrings
 
-# Add the Erlang apt source, referencing the key we just saved
-# [signed-by=...] tells apt which key to use to verify packages from this source
-# "jammy" is the Ubuntu 22.04 codename
-echo "deb [signed-by=/usr/share/keyrings/erlang.gpg] https://packages.erlang-solutions.com/ubuntu jammy contrib" \
-    > /etc/apt/sources.list.d/erlang.list
+# --- Erlang (from RabbitMQ's Cloudsmith repo) ---
+# This gives us a Erlang version that is tested and compatible with RabbitMQ
+curl -fsSL https://dl.cloudsmith.io/public/rabbitmq/rabbitmq-erlang/gpg.E495BB49CC4BBE5B.key \
+    | gpg --dearmor -o /usr/share/keyrings/rabbitmq-erlang.gpg
 
-# --- RabbitMQ repository ---
-# Download the RabbitMQ GPG key (identified by its fingerprint)
-curl -fsSL https://keys.openpgp.org/vks/v1/by-fingerprint/0A9AF2115F4687BD29803A206B73A36E6026DFCA \
-    | gpg --dearmor -o /usr/share/keyrings/rabbitmq.gpg
+echo "deb [signed-by=/usr/share/keyrings/rabbitmq-erlang.gpg] https://dl.cloudsmith.io/public/rabbitmq/rabbitmq-erlang/deb/ubuntu jammy main" \
+    > /etc/apt/sources.list.d/rabbitmq-erlang.list
 
-# Add the RabbitMQ apt source
-echo "deb [signed-by=/usr/share/keyrings/rabbitmq.gpg] https://ppa1.rabbitmq.com/rabbitmq/rabbitmq-server/deb/ubuntu jammy main" \
-    > /etc/apt/sources.list.d/rabbitmq.list
+# --- RabbitMQ server (from RabbitMQ's Cloudsmith repo) ---
+curl -fsSL https://dl.cloudsmith.io/public/rabbitmq/rabbitmq-server/gpg.9F4587F226208342.key \
+    | gpg --dearmor -o /usr/share/keyrings/rabbitmq-server.gpg
 
-# Refresh the package list now that we have the new repositories
+echo "deb [signed-by=/usr/share/keyrings/rabbitmq-server.gpg] https://dl.cloudsmith.io/public/rabbitmq/rabbitmq-server/deb/ubuntu jammy main" \
+    > /etc/apt/sources.list.d/rabbitmq-server.list
+
+# Refresh package list with the new repos
 apt-get update -qq
 
 
 # =============================================================================
 # STEP 3: Install Erlang and RabbitMQ
 #
-# WHY SO MANY ERLANG PACKAGES?
-# Erlang is modular — split into many sub-packages, each providing different
-# functionality. RabbitMQ requires specific modules to be present.
-# Installing them explicitly ensures compatibility:
+# We install erlang-base and the specific Erlang modules RabbitMQ needs.
+# Installing only what's required keeps the container lean.
 #
+# Key modules:
 #   erlang-base         - Core Erlang runtime
-#   erlang-crypto       - Cryptography (for TLS/SSL connections)
-#   erlang-public-key   - Public key infrastructure (for certificates)
+#   erlang-crypto       - Cryptography (TLS connections)
 #   erlang-ssl          - SSL/TLS support
-#   erlang-mnesia       - Database engine (RabbitMQ uses this internally)
-#   erlang-os-mon       - OS monitoring (for RabbitMQ resource alarms)
-#   erlang-tools        - Development tools
-#   ... and others required by RabbitMQ features
+#   erlang-mnesia       - Database engine used by RabbitMQ internally
+#   erlang-os-mon       - OS monitoring for RabbitMQ resource alarms
+#   erlang-public-key   - Certificate handling
+#   erlang-asn1         - ASN.1 support (needed for certificates)
+#   erlang-inets        - HTTP client (used by management plugin)
+#   erlang-xmerl        - XML processing
 # =============================================================================
 echo "Step 3/5: Installing Erlang and RabbitMQ server..."
 
@@ -162,29 +139,31 @@ apt-get install -y \
     erlang-tools \
     erlang-xmerl
 
-# Now install RabbitMQ itself
-# Erlang is already installed so RabbitMQ can find its dependency
 apt-get install -y rabbitmq-server
 
 
 # =============================================================================
-# STEP 4: Enable the Management Plugin
+# STEP 4: Enable the Management Plugin and start the service
+#
 # The management plugin adds a web UI on port 15672.
-# It shows queues, exchanges, message rates, connected consumers,
-# and broker memory/disk usage — essential for debugging DAWS_BAS.
+# Open http://192.168.30.13:15672 in your browser to:
+#   - See all exchanges and queues
+#   - Watch message rates in real time
+#   - See which consumers (Telegraf, etc.) are connected
+#   - Monitor broker memory and disk usage
 # =============================================================================
-echo "Step 4/5: Enabling RabbitMQ management web UI..."
+echo "Step 4/5: Enabling management plugin and starting RabbitMQ..."
 
 rabbitmq-plugins enable rabbitmq_management
 
-# Enable RabbitMQ to start automatically when the LXC boots
+# Start automatically on boot
 systemctl enable rabbitmq-server
 
-# Start RabbitMQ now
+# Start now
 systemctl start rabbitmq-server
 
-# Wait for RabbitMQ to fully initialize before running configuration commands
-# Running rabbitmqctl too soon after start causes "node not running" errors
+# Wait for full initialization before running rabbitmqctl commands
+# Running too soon causes "node not running" errors
 echo "Waiting for RabbitMQ to initialize..."
 sleep 5
 
@@ -192,35 +171,31 @@ sleep 5
 # =============================================================================
 # STEP 5: Configure users, virtual host, and permissions
 # =============================================================================
-echo "Step 5/5: Configuring RabbitMQ users and virtual host..."
+echo "Step 5/5: Configuring users and virtual host..."
 
-# Load the environment variables written by install.sh into /etc/environment
-# We need: RABBITMQ_USER, RABBITMQ_PASS, RABBITMQ_VHOST
+# Load environment variables set by install.sh
+# Provides: RABBITMQ_USER, RABBITMQ_PASS, RABBITMQ_VHOST
 source /etc/environment
 
 # Create the DAWS admin user
-# rabbitmqctl is RabbitMQ's command-line management tool
 rabbitmqctl add_user "$RABBITMQ_USER" "$RABBITMQ_PASS"
 echo "  Created user: $RABBITMQ_USER"
 
-# Create the virtual host for DAWS_BAS
-# Virtual hosts are isolated messaging namespaces within one RabbitMQ server
-# Using a dedicated vhost keeps DAWS_BAS traffic separate from anything else
+# Create the virtual host — an isolated namespace for DAWS_BAS messages
 rabbitmqctl add_vhost "$RABBITMQ_VHOST"
 echo "  Created virtual host: $RABBITMQ_VHOST"
 
-# Grant administrator tag — gives full access to the management web UI
+# Grant administrator tag — gives full management UI access
 rabbitmqctl set_user_tags "$RABBITMQ_USER" administrator
 echo "  Granted administrator role to: $RABBITMQ_USER"
 
-# Set full permissions on our virtual host for our user
-# Format: set_permissions -p <vhost> <user> <configure> <write> <read>
-# ".*" means "allow all" for each permission category
+# Set full permissions on the virtual host
+# ".*" = allow all configure, write, and read operations
 rabbitmqctl set_permissions -p "$RABBITMQ_VHOST" "$RABBITMQ_USER" ".*" ".*" ".*"
 echo "  Set full permissions on /$RABBITMQ_VHOST for $RABBITMQ_USER"
 
-# Delete the default guest user — guest/guest is a well-known security risk
-# "|| true" means: don't fail if guest was already deleted
+# Remove the default guest/guest user — a well-known security risk
+# "|| true" prevents failure if guest was already removed
 rabbitmqctl delete_user guest || true
 echo "  Removed default guest user"
 
@@ -233,7 +208,4 @@ echo "============================================"
 echo "  RabbitMQ setup complete!"
 echo "============================================"
 echo ""
-
-# Print service status to confirm everything is running
-# "--no-pager" prevents systemctl from opening an interactive pager
 systemctl status rabbitmq-server --no-pager
