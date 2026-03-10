@@ -61,13 +61,19 @@ apt-get install -y -qq curl gnupg apt-transport-https
 # =============================================================================
 echo "Step 2/6: Adding InfluxData repository..."
 
-# Download and install the InfluxData GPG signing key
-curl -s https://repos.influxdata.com/influxdata-archive_compat.key \
+# Download and verify the InfluxData GPG signing key
+# The SHA256 checksum verifies the key is genuine before trusting it
+wget -q https://repos.influxdata.com/influxdata-archive_compat.key
+echo '393e8779c89ac8d958f81f942f9ad7fb82a25e133faddaf92e15b16e6ac9ce4c influxdata-archive_compat.key' \
+    | sha256sum -c
+cat influxdata-archive_compat.key \
     | gpg --dearmor \
     | tee /etc/apt/trusted.gpg.d/influxdata-archive_compat.gpg > /dev/null
+rm influxdata-archive_compat.key
 
-# Add the InfluxData stable repository for Ubuntu jammy (22.04)
-echo "deb [arch=amd64 signed-by=/etc/apt/trusted.gpg.d/influxdata-archive_compat.gpg] https://repos.influxdata.com/ubuntu jammy stable" \
+# Add the InfluxData debian stable repository
+# Use "debian stable" not "ubuntu jammy" - this is the correct working repo
+echo "deb [signed-by=/etc/apt/trusted.gpg.d/influxdata-archive_compat.gpg] https://repos.influxdata.com/debian stable main" \
     | tee /etc/apt/sources.list.d/influxdata.list
 
 apt-get update -qq
