@@ -91,6 +91,10 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y -qq grafana
 # Set the admin password from environment variable
 grafana-cli admin reset-admin-password "${GF_SECURITY_ADMIN_PASSWORD}" 2>/dev/null || true
 
+# grafana-cli runs as root and corrupts ownership of /var/lib/grafana
+# Fix it so grafana-server can open its SQLite database
+chown -R grafana:grafana /var/lib/grafana
+
 
 # =============================================================================
 # STEP 4: Provision InfluxDB datasource
