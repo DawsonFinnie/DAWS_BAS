@@ -86,7 +86,7 @@ apt-get update -qq
 # grafana-oss = Open Source edition (free, full featured)
 # =============================================================================
 echo "Step 3/5: Installing Grafana..."
-DEBIAN_FRONTEND=noninteractive apt-get install -y -qq grafana-oss
+DEBIAN_FRONTEND=noninteractive apt-get install -y -qq grafana
 
 # Set the admin password from environment variable
 grafana-cli admin reset-admin-password "${GF_SECURITY_ADMIN_PASSWORD}" 2>/dev/null || true
