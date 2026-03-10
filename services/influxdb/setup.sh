@@ -61,19 +61,26 @@ apt-get install -y -qq curl gnupg apt-transport-https
 # =============================================================================
 echo "Step 2/6: Adding InfluxData repository..."
 
-# Download and verify the InfluxData GPG signing key
-# The SHA256 checksum verifies the key is genuine before trusting it
-wget -q https://repos.influxdata.com/influxdata-archive_compat.key
-echo '393e8779c89ac8d958f81f942f9ad7fb82a25e133faddaf92e15b16e6ac9ce4c influxdata-archive_compat.key' \
-    | sha256sum -c
-cat influxdata-archive_compat.key \
+# InfluxData rotated their signing key on January 6, 2026.
+# We must use influxdata-archive.key (not _compat) and verify by fingerprint.
+# The new subkey AC10D7449F343ADCEFDDC2B6DA61C26A0585BD3B is valid until 2029.
+mkdir -p /etc/apt/keyrings
+
+curl --silent --location -O https://repos.influxdata.com/influxdata-archive.key
+
+# Verify the key fingerprint before trusting it
+gpg --show-keys --with-fingerprint --with-colons ./influxdata-archive.key 2>&1 \
+    | grep -q '^fpr:\+24C975CBA61A024EE1B631787C3D57159FC2F927:$' \
+    && echo "Key fingerprint verified OK" \
+    || { echo "ERROR: Key fingerprint mismatch - aborting"; exit 1; }
+
+cat influxdata-archive.key \
     | gpg --dearmor \
-    | tee /etc/apt/trusted.gpg.d/influxdata-archive_compat.gpg > /dev/null
-rm influxdata-archive_compat.key
+    | tee /etc/apt/keyrings/influxdata-archive.gpg > /dev/null
+rm influxdata-archive.key
 
 # Add the InfluxData debian stable repository
-# Use "debian stable" not "ubuntu jammy" - this is the correct working repo
-echo "deb [signed-by=/etc/apt/trusted.gpg.d/influxdata-archive_compat.gpg] https://repos.influxdata.com/debian stable main" \
+echo "deb [signed-by=/etc/apt/keyrings/influxdata-archive.gpg] https://repos.influxdata.com/debian stable main" \
     | tee /etc/apt/sources.list.d/influxdata.list
 
 apt-get update -qq
