@@ -49,7 +49,7 @@ CT_HOSTNAME="daws-influxdb"
 CT_CORES=2
 CT_RAM=2048       # MB - InfluxDB benefits from more RAM
 CT_DISK=16        # GB - Time series data grows over time
-CT_BRIDGE="vmbr1"
+CT_BRIDGE="vmbr0"
 TEMPLATE="local:vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.zst"
 SETUP_URL="https://raw.githubusercontent.com/DawsonFinnie/DAWS_BAS/main/services/influxdb/setup.sh"
 
