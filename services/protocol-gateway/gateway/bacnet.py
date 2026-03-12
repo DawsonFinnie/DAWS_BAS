@@ -6,148 +6,102 @@
 # This file discovers BACnet devices on your network, reads their points,
 # and publishes the values to RabbitMQ via the Publisher.
 #
-# WHAT IS BACNET?
-# BACnet (Building Automation and Control Networks) is the standard protocol
-# used in building automation. HVAC controllers, lighting systems, energy
-# meters, and sensors all commonly speak BACnet.
+# BAC0 VERSION NOTE — important:
+# BAC0 2025.x has two modes:
+#   BAC0.lite()    → used for SERVING BACnet objects (like the traffic light)
+#   BAC0.connect() → used for READING from other devices on the network
 #
-# Your traffic light simulator is a BACnet device. This gateway would
-# discover it automatically and start publishing its four binary values
-# (red_light, yellow_light, green_light, running) to RabbitMQ.
+# The traffic light uses BAC0.lite() because it IS a BACnet device.
+# This gateway uses BAC0.connect() because it READS from other devices.
+# The .whois() method only exists on BAC0.connect(), not BAC0.lite().
+# This was the bug: we were calling whois() on a lite() object.
 #
 # HOW BACNET DISCOVERY WORKS:
-#   1. The gateway broadcasts a "WhoIs" packet to the network
-#      (like shouting "Is anyone there?" to the whole building network)
-#   2. Every BACnet device on the network responds with an "IAm" packet
-#      (like each device saying "Yes, I'm here, my ID is 3001")
-#   3. For each device found, we connect and read its object list
-#      (a list of all its data points)
-#   4. For each object/point, we read the presentValue (the current reading)
-#   5. We normalize and publish each value to RabbitMQ
-#   6. We wait POLL_INTERVAL seconds, then do it all again
-#
-# NOTE: This is a polling approach (we ask devices for their values).
-# The traffic light simulator also supports COV (Change of Value) which
-# is a push approach (devices tell us when values change). Adding COV
-# subscription support to this gateway would be a future improvement.
-#
-# HOW IT FITS IN THE SYSTEM:
-#   main.py calls run_bacnet_gateway(publisher)
-#       BAC0 sends WhoIs broadcast → devices respond with IAm
-#           For each device → read all points → normalize() → publish()
-#               RabbitMQ receives messages with routing key "point.bacnet.<name>"
-#                   Telegraf picks them up → writes to InfluxDB
+#   1. bacnet = BAC0.connect()  — create a network client
+#   2. bacnet.whois()           — broadcast "who is out there?"
+#   3. Every device replies with IAm — "I am device 3001 at 192.168.30.12"
+#   4. BAC0.device() connects to each and reads its full object/point list
+#   5. We read presentValue for each point, normalize, publish to RabbitMQ
+#   6. Wait POLL_INTERVAL seconds, repeat
 #
 # =============================================================================
 
-import asyncio      # For async/await - BAC0 requires an asyncio event loop
-import logging      # For writing log messages
-import os           # For reading environment variables
-import BAC0         # The BACnet library that handles all BACnet communication
+import asyncio
+import logging
+import os
+import BAC0
 
-# Import our helper functions from other files in this package
-from gateway.normalizer import normalize    # Converts raw data to standard format
-from gateway.publisher  import Publisher    # Sends messages to RabbitMQ
+from gateway.normalizer import normalize
+from gateway.publisher  import Publisher
 
-# Get a logger for this module
 logger = logging.getLogger(__name__)
 
-# How many seconds to wait between full network scans.
-# 30 seconds means every device gets polled every 30 seconds.
-# Read from environment variable so it can be changed without editing code.
-# Defaults to 30 if not set.
 POLL_INTERVAL = int(os.environ.get("GATEWAY_POLL_INTERVAL", 30))
 
 
 async def run_bacnet_gateway(publisher: Publisher):
     """
     Main BACnet gateway loop. Runs forever.
-
-    1. Initializes a BAC0 BACnet client on the network
-    2. Sends WhoIs to discover all devices
-    3. Reads all points from each device
-    4. Publishes each value to RabbitMQ
-    5. Waits POLL_INTERVAL seconds
-    6. Repeats from step 2
+    Discovers all BACnet devices on the network and publishes their
+    point values to RabbitMQ every POLL_INTERVAL seconds.
     """
 
-    # Read network configuration from environment variables
-    # BACNET_NETWORK tells BAC0 which network interface to use for broadcasts
-    # e.g. "192.168.30.0/24" means use the interface on the 192.168.30.x subnet
-    network   = os.environ.get("BACNET_NETWORK", "192.168.30.0/24")
-
-    # BACNET_DEVICE_ID is the BACnet device ID for THIS gateway itself
-    # Every BACnet device on a network needs a unique ID
-    # We use 9001 to avoid conflicting with the traffic light (3001)
     device_id = int(os.environ.get("BACNET_DEVICE_ID", 9001))
 
-    logger.info(f"Starting BACnet gateway | Network: {network} | Device ID: {device_id}")
+    logger.info(f"Starting BACnet gateway | Device ID: {device_id}")
 
-    # Initialize BAC0 as a "lite" client
-    # BAC0.lite() creates a minimal BACnet device that can send/receive on the network
-    # Unlike the traffic light which uses BAC0 as a SERVER (serving data),
-    # here we use it as a CLIENT (reading data from other devices)
-    bacnet = BAC0.lite(deviceId=device_id)
+    # BAC0.connect() — the network scanning client
+    # This is NOT the same as BAC0.lite() used in the traffic light.
+    # connect() creates a BACnet client that can discover and read other devices.
+    bacnet = BAC0.connect(deviceId=device_id)
 
-    # Wait 2 seconds for BAC0 to fully initialize before we start using it
-    # This is the same delay we use in the traffic light simulator
-    # Without this, BAC0 may not be ready to send WhoIs broadcasts yet
-    await asyncio.sleep(2)
+    # Wait for BAC0 to fully initialize
+    await asyncio.sleep(5)
 
     logger.info("BAC0 initialized. Beginning network scan loop.")
 
-    # Main loop - runs forever, scanning and publishing
+    # Cache discovered device objects so we don't reconnect on every poll
+    # Key: device_id (int), Value: BAC0 device object
+    known_devices = {}
+
     while True:
         try:
             logger.info("Scanning BACnet network for devices...")
 
-            # Send a WhoIs broadcast to the entire network
-            # All BACnet devices should respond with an IAm packet
-            # BAC0 automatically collects the responses
-            bacnet.whois()
+            # whois() broadcasts a WhoIs packet to the entire BACnet network
+            # Returns a list of (address, device_id) tuples — one per responding device
+            # Empty call = global broadcast (no address or ID range filter)
+            responses = bacnet.whois()
 
-            # Wait 3 seconds for all devices to respond to the WhoIs
-            # Devices on slow networks or far away may take a moment to reply
+            # Give devices time to respond before we start reading
             await asyncio.sleep(3)
 
-            # bacnet.devices is a list of tuples: [(address, device_id), ...]
-            # Each entry represents one BACnet device that responded to WhoIs
-            if not bacnet.devices:
-                logger.warning("No BACnet devices found on network. Is the network correct?")
+            if not responses:
+                logger.warning("No BACnet devices responded to WhoIs. Check network/VLAN.")
             else:
-                logger.info(f"Found {len(bacnet.devices)} BACnet device(s)")
+                logger.info(f"Found {len(responses)} BACnet device(s): {responses}")
 
-            # Loop through each discovered device
-            for device_address, device_id_found in bacnet.devices:
+            for device_address, device_id_found in (responses or []):
                 try:
-                    logger.info(f"Reading device {device_id_found} at {device_address}")
+                    # Connect to new devices and cache them
+                    # BAC0.device() reads the full object list — only do this once per device
+                    if device_id_found not in known_devices:
+                        logger.info(f"Connecting to new device {device_id_found} at {device_address}")
+                        dev = BAC0.device(device_address, device_id_found, bacnet)
+                        await asyncio.sleep(2)
+                        known_devices[device_id_found] = dev
+                        logger.info(f"Device {device_id_found}: {len(dev.points)} points discovered")
+                    else:
+                        dev = known_devices[device_id_found]
 
-                    # Connect to the device and load its object/point list
-                    # BAC0.device() reads the device's object list and creates
-                    # Python objects for each BACnet point
-                    device = BAC0.device(device_address, device_id_found, bacnet)
-
-                    # Give BAC0 a moment to read the device's object list
-                    await asyncio.sleep(1)
-
-                    # device.points is a list of all data points on this device
-                    # Each point has properties like name, lastValue, units_state
-                    for point in device.points:
+                    # Read and publish every point on this device
+                    for point in dev.points:
                         try:
-                            # Read the last known value for this point
-                            value = point.lastValue
-
-                            # Get the human-readable name of this point
-                            # e.g. "red_light", "supply_temp", "zone_co2"
+                            value      = point.lastValue
                             point_name = point.properties.name
+                            unit       = str(point.properties.units_state) \
+                                         if hasattr(point.properties, "units_state") else ""
 
-                            # Get the engineering unit if available
-                            # e.g. "degC", "Pa", "%RH", "active"
-                            # Not all points have units (binary values often don't)
-                            unit = str(point.properties.units_state) \
-                                if hasattr(point.properties, 'units_state') else ""
-
-                            # Normalize the raw data into our standard format
                             message = normalize(
                                 protocol   = "bacnet",
                                 device_id  = f"bacnet:{device_id_found}",
@@ -155,33 +109,22 @@ async def run_bacnet_gateway(publisher: Publisher):
                                 value      = str(value),
                                 unit       = unit,
                                 metadata   = {
-                                    # Store extra BACnet-specific info for traceability
-                                    "address":     device_address,      # e.g. "192.168.30.12"
-                                    "object_type": str(point.properties.type),  # e.g. "binaryValue"
-                                    "instance":    point.properties.address     # e.g. 1, 2, 3, 4
+                                    "address":     device_address,
+                                    "object_type": str(point.properties.type),
+                                    "instance":    point.properties.address
                                 }
                             )
-
-                            # Publish the normalized message to RabbitMQ
-                            # Routing key will be: "point.bacnet.red_light" etc.
                             publisher.publish(message, "bacnet", point_name)
 
                         except Exception as e:
-                            # If one point fails, log it but keep reading other points
-                            # We don't want one bad point to stop the whole device scan
-                            logger.warning(f"Failed to read point '{point}' on device {device_id_found}: {e}")
+                            logger.warning(f"  Point read failed '{point}' on {device_id_found}: {e}")
 
                 except Exception as e:
-                    # If one device fails, log it but keep scanning other devices
-                    logger.warning(f"Failed to read device {device_id_found} at {device_address}: {e}")
+                    logger.warning(f"Device {device_id_found} at {device_address} failed: {e}")
+                    known_devices.pop(device_id_found, None)
 
         except Exception as e:
-            # If the whole scan fails (e.g. network error), log and continue
-            # The loop will try again after POLL_INTERVAL seconds
             logger.error(f"BACnet scan error: {e}")
 
-        # Wait before the next full scan
-        # await asyncio.sleep() pauses THIS task but lets other async tasks run
-        # (like Modbus or OPC-UA handlers that are also running concurrently)
         logger.info(f"BACnet scan complete. Next scan in {POLL_INTERVAL} seconds.")
         await asyncio.sleep(POLL_INTERVAL)
