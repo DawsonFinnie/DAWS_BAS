@@ -125,28 +125,9 @@ sleep 5
 # =============================================================================
 echo "Writing configuration to container..."
 
-pct exec ${CT_ID} -- bash -c "cat >> /etc/environment << 'ENVEOF'
-# RabbitMQ — where to publish normalized point data
-RABBITMQ_HOST=192.168.30.13
-RABBITMQ_USER=daws
-RABBITMQ_PASS=${RABBITMQ_PASS}
-RABBITMQ_VHOST=bas
-
-# BACnet — network interface and device ID for this gateway
-BACNET_NETWORK=${BACNET_NETWORK}
-BACNET_DEVICE_ID=${BACNET_DEVICE_ID}
-
-# Poll interval — how often to read all BACnet points (seconds)
-# 30 seconds is a good default for a learning/lab environment
-# Production systems often use 10-15 seconds or COV subscriptions
-GATEWAY_POLL_INTERVAL=30
-
-# Optional protocols — uncomment and fill in to enable
-# MODBUS_DEVICES='[{"id":"chiller-01","host":"192.168.30.50","port":502,"registers":[{"name":"supply_temp","address":100,"scale":0.1,"unit":"degC"}]}]'
-# MQTT_BROKER=192.168.30.55
-# OPCUA_SERVERS='[{"id":"ahu-01","url":"opc.tcp://192.168.30.56:4840","nodes":[{"name":"supply_temp","node_id":"ns=2;i=1001"}]}]'
-# LON_SERVERS='[{"id":"vav-301","host":"192.168.30.60","username":"admin","password":"ilon","datapoints":["nviSetpoint","nvoSpaceTemp"]}]'
-ENVEOF"
+printf '\n# DAWS_BAS Protocol Gateway\nRABBITMQ_HOST=192.168.30.13\nRABBITMQ_USER=daws\nRABBITMQ_PASS=%s\nRABBITMQ_VHOST=bas\nBACNET_NETWORK=%s\nBACNET_DEVICE_ID=%s\nGATEWAY_POLL_INTERVAL=30\n' \
+    "${RABBITMQ_PASS}" "${BACNET_NETWORK}" "${BACNET_DEVICE_ID}" \
+    | pct exec ${CT_ID} -- bash -c "cat >> /etc/environment"
 
 
 # =============================================================================
