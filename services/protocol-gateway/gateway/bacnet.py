@@ -83,10 +83,22 @@ async def run_bacnet_gateway(publisher: Publisher):
                     point_count = 0
                     for point in dev.points:
                         try:
-                            value      = point.lastValue
+                            if point is None or not hasattr(point, 'properties'):
+                                continue
                             point_name = point.properties.name
-                            unit       = str(point.properties.units_state) \
-                                         if hasattr(point.properties, "units_state") else ""
+
+                            # BAC0 2025.x: _history.value may be a list not pandas Series
+                            try:
+                                value = point.lastValue
+                            except (AttributeError, TypeError):
+                                hist = point._history.value
+                                value = hist[-1] if hist else None
+
+                            if value is None:
+                                continue
+
+                            unit = str(point.properties.units_state) \
+                                   if hasattr(point.properties, "units_state") else ""
 
                             message = normalize(
                                 protocol   = "bacnet",
