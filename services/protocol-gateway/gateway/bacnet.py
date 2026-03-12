@@ -72,7 +72,7 @@ async def run_bacnet_gateway(publisher: Publisher):
                     # Connect to device if first time seeing it
                     if device_id_found not in known_devices:
                         logger.info(f"  Connecting to new device {device_id_found}...")
-                        dev = BAC0.device(device_address, device_id_found, bacnet)
+                        dev = await BAC0.device(device_address, device_id_found, bacnet)
                         await asyncio.sleep(2)
                         known_devices[device_id_found] = dev
                         logger.info(f"  Device {device_id_found}: {len(dev.points)} points discovered")
