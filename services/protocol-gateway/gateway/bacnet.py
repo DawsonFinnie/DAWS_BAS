@@ -2,12 +2,12 @@
 # bacnet.py  (BACnet Protocol Handler)
 # =============================================================================
 #
-# BAC0 2025.x API notes:
-#   - BAC0.lite() is the only startup method (lite/complete are merged)
-#   - Discovery: await bacnet.who_is()  ← async, must be awaited
-#   - bacnet.discover(global_broadcast=True) ← async background scan
-#   - bacnet.devices  ← dict of discovered devices after who_is
-#   - BAC0.device()   ← connect to a specific device and read its points
+# BAC0 2025.x API:
+#   - await bacnet.who_is()  → returns list of IAmRequest PDU objects
+#   - await bacnet.devices   → coroutine, returns discovered device list
+#   - Each IAm PDU has:
+#       .iAmDeviceIdentifier  → ('device', 3001)
+#       .pduSource            → address string e.g. "192.168.30.12"
 #
 # =============================================================================
 
@@ -27,67 +27,60 @@ POLL_INTERVAL = int(os.environ.get("GATEWAY_POLL_INTERVAL", 30))
 async def run_bacnet_gateway(publisher: Publisher):
     """
     Main BACnet gateway loop. Runs forever.
-    Discovers all BACnet devices on the network and publishes their
-    point values to RabbitMQ every POLL_INTERVAL seconds.
+    Discovers BACnet devices via WhoIs/IAm, reads their points,
+    and publishes normalized JSON to RabbitMQ.
     """
 
     device_id = int(os.environ.get("BACNET_DEVICE_ID", 9001))
     logger.info(f"Starting BACnet gateway | Device ID: {device_id}")
 
-    # BAC0.lite() is the unified startup in 2025.x
-    # It auto-detects the network interface from the system
     bacnet = BAC0.lite(deviceId=device_id)
-
-    # Wait for BAC0 to fully initialize before sending any requests
     await asyncio.sleep(5)
     logger.info("BAC0 initialized. Beginning network scan loop.")
 
-    # Cache connected device objects so we only call BAC0.device() once per device
+    # Cache connected BAC0.device() objects — connecting is expensive
+    # Key: device_id (int), Value: BAC0 device object
     known_devices = {}
 
     while True:
         try:
             logger.info("Scanning BACnet network for devices...")
 
-            # who_is() is async in BAC0 2025.x — must be awaited
-            # No arguments = global broadcast to all devices on the subnet
-            # Returns a list of IAm response objects
+            # who_is() returns a list of IAmRequest PDU objects
+            # Each PDU has .iAmDeviceIdentifier and .pduSource
             iams = await bacnet.who_is()
-
             await asyncio.sleep(2)
 
             if not iams:
-                logger.warning("No BACnet devices responded to WhoIs. Check network/VLAN.")
-            else:
-                logger.info(f"WhoIs got {len(iams)} response(s): {iams}")
+                logger.warning("No BACnet devices responded to WhoIs.")
+                logger.info(f"Scan complete. Next scan in {POLL_INTERVAL}s.")
+                await asyncio.sleep(POLL_INTERVAL)
+                continue
 
-            # bacnet.devices is populated after who_is()
-            # It is a dict: { device_id: (address, device_id) }
-            devices = bacnet.devices
-            if not devices:
-                logger.warning("bacnet.devices is empty after WhoIs.")
-            else:
-                logger.info(f"Found {len(devices)} device(s) in bacnet.devices")
+            logger.info(f"WhoIs got {len(iams)} response(s)")
 
-            for dev_entry in devices:
+            # Parse each IAm response to get address and device ID
+            for iam in iams:
                 try:
-                    # dev_entry format depends on BAC0 version
-                    # Could be (address, id) tuple or just an id — handle both
-                    if isinstance(dev_entry, tuple):
-                        device_address, device_id_found = dev_entry
-                    else:
-                        device_id_found = dev_entry
-                        device_address  = devices[dev_entry] if isinstance(devices, dict) else None
+                    # iAmDeviceIdentifier is a tuple: ('device', <id>)
+                    device_id_found = int(iam.iAmDeviceIdentifier[1])
+                    # pduSource is the address — convert to string
+                    device_address  = str(iam.pduSource)
 
+                    logger.info(f"  IAm from device {device_id_found} at {device_address}")
+
+                    # Connect to device if first time seeing it
                     if device_id_found not in known_devices:
-                        logger.info(f"Connecting to device {device_id_found} at {device_address}")
+                        logger.info(f"  Connecting to new device {device_id_found}...")
                         dev = BAC0.device(device_address, device_id_found, bacnet)
                         await asyncio.sleep(2)
                         known_devices[device_id_found] = dev
-                        logger.info(f"Device {device_id_found}: {len(dev.points)} points discovered")
+                        logger.info(f"  Device {device_id_found}: {len(dev.points)} points discovered")
                     else:
                         dev = known_devices[device_id_found]
 
+                    # Read and publish all points
+                    point_count = 0
                     for point in dev.points:
                         try:
                             value      = point.lastValue
@@ -102,22 +95,24 @@ async def run_bacnet_gateway(publisher: Publisher):
                                 value      = str(value),
                                 unit       = unit,
                                 metadata   = {
-                                    "address":     str(device_address),
+                                    "address":     device_address,
                                     "object_type": str(point.properties.type),
                                     "instance":    point.properties.address
                                 }
                             )
                             publisher.publish(message, "bacnet", point_name)
+                            point_count += 1
 
                         except Exception as e:
-                            logger.warning(f"  Point read failed '{point}' on {device_id_found}: {e}")
+                            logger.warning(f"    Point read failed '{point}': {e}")
+
+                    logger.info(f"  Published {point_count} points from device {device_id_found}")
 
                 except Exception as e:
-                    logger.warning(f"Device entry {dev_entry} failed: {e}")
-                    if isinstance(dev_entry, tuple):
-                        known_devices.pop(dev_entry[1], None)
-                    else:
-                        known_devices.pop(dev_entry, None)
+                    logger.warning(f"Failed processing IAm response: {e}", exc_info=True)
+                    # Remove from cache to force reconnect next scan
+                    if 'device_id_found' in dir():
+                        known_devices.pop(device_id_found, None)
 
         except Exception as e:
             logger.error(f"BACnet scan error: {e}", exc_info=True)
