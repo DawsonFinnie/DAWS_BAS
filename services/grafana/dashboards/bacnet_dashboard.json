@@ -1,0 +1,360 @@
+{
+  "__inputs": [],
+  "__requires": [],
+  "annotations": {"list": []},
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0},
+      "id": 100,
+      "title": "FCU — Device 1 (2501:4)",
+      "type": "row"
+    },
+    {
+      "datasource": {"type": "influxdb", "uid": "P951FEA4DE68E13C5"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "blue", "value": null},
+              {"color": "green", "value": 68},
+              {"color": "orange", "value": 76},
+              {"color": "red", "value": 80}
+            ]
+          },
+          "unit": "fahrenheit",
+          "mappings": []
+        }
+      },
+      "gridPos": {"h": 4, "w": 4, "x": 0, "y": 1},
+      "id": 1,
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "orientation": "auto", "textMode": "auto", "colorMode": "background"},
+      "title": "Zone Temp (ZN-T)",
+      "type": "stat",
+      "targets": [{
+        "datasource": {"type": "influxdb", "uid": "P951FEA4DE68E13C5"},
+        "query": "from(bucket: \"bas\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"point_update\")\n  |> filter(fn: (r) => r[\"device_id\"] == \"bacnet:1\")\n  |> filter(fn: (r) => r[\"point_name\"] == \"ZN-T\")\n  |> filter(fn: (r) => r[\"_field\"] == \"value\")\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)",
+        "refId": "A"
+      }]
+    },
+    {
+      "datasource": {"type": "influxdb", "uid": "P951FEA4DE68E13C5"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]},
+          "unit": "fahrenheit"
+        }
+      },
+      "gridPos": {"h": 4, "w": 4, "x": 4, "y": 1},
+      "id": 2,
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "background"},
+      "title": "Zone Setpoint (ZN-SP)",
+      "type": "stat",
+      "targets": [{
+        "datasource": {"type": "influxdb", "uid": "P951FEA4DE68E13C5"},
+        "query": "from(bucket: \"bas\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"point_update\")\n  |> filter(fn: (r) => r[\"device_id\"] == \"bacnet:1\")\n  |> filter(fn: (r) => r[\"point_name\"] == \"ZN-SP\")\n  |> filter(fn: (r) => r[\"_field\"] == \"value\")\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)",
+        "refId": "A"
+      }]
+    },
+    {
+      "datasource": {"type": "influxdb", "uid": "P951FEA4DE68E13C5"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 1}
+            ]
+          },
+          "unit": "short",
+          "mappings": [
+            {"options": {"0": {"text": "Off"}, "1": {"text": "On"}}, "type": "value"}
+          ]
+        }
+      },
+      "gridPos": {"h": 4, "w": 3, "x": 8, "y": 1},
+      "id": 3,
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "background"},
+      "title": "Fan State",
+      "type": "stat",
+      "targets": [{
+        "datasource": {"type": "influxdb", "uid": "P951FEA4DE68E13C5"},
+        "query": "from(bucket: \"bas\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"point_update\")\n  |> filter(fn: (r) => r[\"device_id\"] == \"bacnet:1\")\n  |> filter(fn: (r) => r[\"point_name\"] == \"FAN-STATE\")\n  |> filter(fn: (r) => r[\"_field\"] == \"value\")\n  |> last()",
+        "refId": "A"
+      }]
+    },
+    {
+      "datasource": {"type": "influxdb", "uid": "P951FEA4DE68E13C5"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "blue", "value": null}]},
+          "unit": "short"
+        }
+      },
+      "gridPos": {"h": 4, "w": 3, "x": 11, "y": 1},
+      "id": 4,
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "background"},
+      "title": "Occ Mode",
+      "type": "stat",
+      "targets": [{
+        "datasource": {"type": "influxdb", "uid": "P951FEA4DE68E13C5"},
+        "query": "from(bucket: \"bas\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"point_update\")\n  |> filter(fn: (r) => r[\"device_id\"] == \"bacnet:1\")\n  |> filter(fn: (r) => r[\"point_name\"] == \"OCC-MODE\")\n  |> filter(fn: (r) => r[\"_field\"] == \"value\")\n  |> last()",
+        "refId": "A"
+      }]
+    },
+    {
+      "datasource": {"type": "influxdb", "uid": "P951FEA4DE68E13C5"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "blue", "value": null}]},
+          "unit": "short"
+        }
+      },
+      "gridPos": {"h": 4, "w": 3, "x": 14, "y": 1},
+      "id": 5,
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "background"},
+      "title": "System Mode",
+      "type": "stat",
+      "targets": [{
+        "datasource": {"type": "influxdb", "uid": "P951FEA4DE68E13C5"},
+        "query": "from(bucket: \"bas\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"point_update\")\n  |> filter(fn: (r) => r[\"device_id\"] == \"bacnet:1\")\n  |> filter(fn: (r) => r[\"point_name\"] == \"SYSTEM-MODE\")\n  |> filter(fn: (r) => r[\"_field\"] == \"value\")\n  |> last()",
+        "refId": "A"
+      }]
+    },
+    {
+      "datasource": {"type": "influxdb", "uid": "P951FEA4DE68E13C5"},
+      "fieldConfig": {
+        "defaults": {"color": {"mode": "palette-classic"}, "unit": "fahrenheit"},
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 5},
+      "id": 6,
+      "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+      "title": "Zone Temp vs Setpoint",
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": {"type": "influxdb", "uid": "P951FEA4DE68E13C5"},
+          "query": "from(bucket: \"bas\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"point_update\")\n  |> filter(fn: (r) => r[\"device_id\"] == \"bacnet:1\")\n  |> filter(fn: (r) => r[\"point_name\"] == \"ZN-T\")\n  |> filter(fn: (r) => r[\"_field\"] == \"value\")\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> set(key: \"_field\", value: \"ZN-T\")",
+          "refId": "A"
+        },
+        {
+          "datasource": {"type": "influxdb", "uid": "P951FEA4DE68E13C5"},
+          "query": "from(bucket: \"bas\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"point_update\")\n  |> filter(fn: (r) => r[\"device_id\"] == \"bacnet:1\")\n  |> filter(fn: (r) => r[\"point_name\"] == \"ZN-SP\")\n  |> filter(fn: (r) => r[\"_field\"] == \"value\")\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> set(key: \"_field\", value: \"ZN-SP\")",
+          "refId": "B"
+        },
+        {
+          "datasource": {"type": "influxdb", "uid": "P951FEA4DE68E13C5"},
+          "query": "from(bucket: \"bas\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"point_update\")\n  |> filter(fn: (r) => r[\"device_id\"] == \"bacnet:1\")\n  |> filter(fn: (r) => r[\"point_name\"] == \"EFFCLG-SP\")\n  |> filter(fn: (r) => r[\"_field\"] == \"value\")\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> set(key: \"_field\", value: \"EFFCLG-SP\")",
+          "refId": "C"
+        },
+        {
+          "datasource": {"type": "influxdb", "uid": "P951FEA4DE68E13C5"},
+          "query": "from(bucket: \"bas\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"point_update\")\n  |> filter(fn: (r) => r[\"device_id\"] == \"bacnet:1\")\n  |> filter(fn: (r) => r[\"point_name\"] == \"EFFHTG-SP\")\n  |> filter(fn: (r) => r[\"_field\"] == \"value\")\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> set(key: \"_field\", value: \"EFFHTG-SP\")",
+          "refId": "D"
+        }
+      ]
+    },
+    {
+      "datasource": {"type": "influxdb", "uid": "P951FEA4DE68E13C5"},
+      "fieldConfig": {
+        "defaults": {"color": {"mode": "palette-classic"}, "unit": "percent", "min": 0, "max": 100},
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 5},
+      "id": 7,
+      "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+      "title": "Cooling & Heating Output",
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": {"type": "influxdb", "uid": "P951FEA4DE68E13C5"},
+          "query": "from(bucket: \"bas\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"point_update\")\n  |> filter(fn: (r) => r[\"device_id\"] == \"bacnet:1\")\n  |> filter(fn: (r) => r[\"point_name\"] == \"CLG-O\")\n  |> filter(fn: (r) => r[\"_field\"] == \"value\")\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> set(key: \"_field\", value: \"CLG-O\")",
+          "refId": "A"
+        },
+        {
+          "datasource": {"type": "influxdb", "uid": "P951FEA4DE68E13C5"},
+          "query": "from(bucket: \"bas\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"point_update\")\n  |> filter(fn: (r) => r[\"device_id\"] == \"bacnet:1\")\n  |> filter(fn: (r) => r[\"point_name\"] == \"HTG-O\")\n  |> filter(fn: (r) => r[\"_field\"] == \"value\")\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> set(key: \"_field\", value: \"HTG-O\")",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 13},
+      "id": 101,
+      "title": "SNE-01 — Outdoor Conditions (Device 539035)",
+      "type": "row"
+    },
+    {
+      "datasource": {"type": "influxdb", "uid": "P951FEA4DE68E13C5"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "blue", "value": null},
+              {"color": "green", "value": 10},
+              {"color": "orange", "value": 25},
+              {"color": "red", "value": 35}
+            ]
+          },
+          "unit": "celsius"
+        }
+      },
+      "gridPos": {"h": 4, "w": 4, "x": 0, "y": 14},
+      "id": 10,
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "background"},
+      "title": "Outdoor Air Temp",
+      "type": "stat",
+      "targets": [{
+        "datasource": {"type": "influxdb", "uid": "P951FEA4DE68E13C5"},
+        "query": "from(bucket: \"bas\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"point_update\")\n  |> filter(fn: (r) => r[\"device_id\"] == \"bacnet:539035\")\n  |> filter(fn: (r) => r[\"point_name\"] == \"SNE-01/Programming.OA-T\")\n  |> filter(fn: (r) => r[\"_field\"] == \"value\")\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)",
+        "refId": "A"
+      }]
+    },
+    {
+      "datasource": {"type": "influxdb", "uid": "P951FEA4DE68E13C5"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "blue", "value": null},
+              {"color": "green", "value": 10},
+              {"color": "orange", "value": 25}
+            ]
+          },
+          "unit": "celsius"
+        }
+      },
+      "gridPos": {"h": 4, "w": 4, "x": 4, "y": 14},
+      "id": 11,
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "background"},
+      "title": "Feels Like",
+      "type": "stat",
+      "targets": [{
+        "datasource": {"type": "influxdb", "uid": "P951FEA4DE68E13C5"},
+        "query": "from(bucket: \"bas\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"point_update\")\n  |> filter(fn: (r) => r[\"device_id\"] == \"bacnet:539035\")\n  |> filter(fn: (r) => r[\"point_name\"] == \"SNE-01/Programming.FEELS_LIKE\")\n  |> filter(fn: (r) => r[\"_field\"] == \"value\")\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)",
+        "refId": "A"
+      }]
+    },
+    {
+      "datasource": {"type": "influxdb", "uid": "P951FEA4DE68E13C5"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 60},
+              {"color": "red", "value": 80}
+            ]
+          },
+          "unit": "percent",
+          "min": 0,
+          "max": 100
+        }
+      },
+      "gridPos": {"h": 4, "w": 4, "x": 8, "y": 14},
+      "id": 12,
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "background"},
+      "title": "Outdoor Humidity",
+      "type": "stat",
+      "targets": [{
+        "datasource": {"type": "influxdb", "uid": "P951FEA4DE68E13C5"},
+        "query": "from(bucket: \"bas\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"point_update\")\n  |> filter(fn: (r) => r[\"device_id\"] == \"bacnet:539035\")\n  |> filter(fn: (r) => r[\"point_name\"] == \"SNE-01/Programming.OA_Humidity\")\n  |> filter(fn: (r) => r[\"_field\"] == \"value\")\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)",
+        "refId": "A"
+      }]
+    },
+    {
+      "datasource": {"type": "influxdb", "uid": "P951FEA4DE68E13C5"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 20},
+              {"color": "red", "value": 40}
+            ]
+          },
+          "unit": "velocitykmh"
+        }
+      },
+      "gridPos": {"h": 4, "w": 4, "x": 12, "y": 14},
+      "id": 13,
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "background"},
+      "title": "Wind Speed",
+      "type": "stat",
+      "targets": [{
+        "datasource": {"type": "influxdb", "uid": "P951FEA4DE68E13C5"},
+        "query": "from(bucket: \"bas\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"point_update\")\n  |> filter(fn: (r) => r[\"device_id\"] == \"bacnet:539035\")\n  |> filter(fn: (r) => r[\"point_name\"] == \"SNE-01/Programming.Wind_Speed\")\n  |> filter(fn: (r) => r[\"_field\"] == \"value\")\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)",
+        "refId": "A"
+      }]
+    },
+    {
+      "datasource": {"type": "influxdb", "uid": "P951FEA4DE68E13C5"},
+      "fieldConfig": {
+        "defaults": {"color": {"mode": "palette-classic"}, "unit": "celsius"},
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "OA_Humidity"}, "properties": [{"id": "unit", "value": "percent"}, {"id": "custom.axisPlacement", "value": "right"}]},
+          {"matcher": {"id": "byName", "options": "Wind_Speed"}, "properties": [{"id": "unit", "value": "velocitykmh"}, {"id": "custom.axisPlacement", "value": "right"}]}
+        ]
+      },
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 18},
+      "id": 14,
+      "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+      "title": "Outdoor Conditions — History",
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": {"type": "influxdb", "uid": "P951FEA4DE68E13C5"},
+          "query": "from(bucket: \"bas\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"point_update\")\n  |> filter(fn: (r) => r[\"device_id\"] == \"bacnet:539035\")\n  |> filter(fn: (r) => r[\"point_name\"] == \"SNE-01/Programming.OA-T\")\n  |> filter(fn: (r) => r[\"_field\"] == \"value\")\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> set(key: \"_field\", value: \"OA-T\")",
+          "refId": "A"
+        },
+        {
+          "datasource": {"type": "influxdb", "uid": "P951FEA4DE68E13C5"},
+          "query": "from(bucket: \"bas\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"point_update\")\n  |> filter(fn: (r) => r[\"device_id\"] == \"bacnet:539035\")\n  |> filter(fn: (r) => r[\"point_name\"] == \"SNE-01/Programming.FEELS_LIKE\")\n  |> filter(fn: (r) => r[\"_field\"] == \"value\")\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> set(key: \"_field\", value: \"FEELS_LIKE\")",
+          "refId": "B"
+        },
+        {
+          "datasource": {"type": "influxdb", "uid": "P951FEA4DE68E13C5"},
+          "query": "from(bucket: \"bas\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"point_update\")\n  |> filter(fn: (r) => r[\"device_id\"] == \"bacnet:539035\")\n  |> filter(fn: (r) => r[\"point_name\"] == \"SNE-01/Programming.OA_Humidity\")\n  |> filter(fn: (r) => r[\"_field\"] == \"value\")\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> set(key: \"_field\", value: \"OA_Humidity\")",
+          "refId": "C"
+        },
+        {
+          "datasource": {"type": "influxdb", "uid": "P951FEA4DE68E13C5"},
+          "query": "from(bucket: \"bas\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"point_update\")\n  |> filter(fn: (r) => r[\"device_id\"] == \"bacnet:539035\")\n  |> filter(fn: (r) => r[\"point_name\"] == \"SNE-01/Programming.Wind_Speed\")\n  |> filter(fn: (r) => r[\"_field\"] == \"value\")\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> set(key: \"_field\", value: \"Wind_Speed\")",
+          "refId": "D"
+        }
+      ]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "tags": ["bacnet", "daws-bas"],
+  "templating": {"list": []},
+  "time": {"from": "now-3h", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "DAWS_BAS — BACnet Devices",
+  "uid": "daws-bacnet-001",
+  "version": 1
+}
