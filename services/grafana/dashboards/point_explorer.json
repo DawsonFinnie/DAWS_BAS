@@ -1,0 +1,159 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": {"type": "influxdb", "uid": "P951FEA4DE68E13C5"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]},
+          "unit": "short"
+        }
+      },
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+      "id": 1,
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "background", "textMode": "value_and_name"},
+      "title": "Current Value — ${point_name}",
+      "type": "stat",
+      "targets": [{
+        "datasource": {"type": "influxdb", "uid": "P951FEA4DE68E13C5"},
+        "query": "from(bucket: \"bas\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"point_update\")\n  |> filter(fn: (r) => r[\"device_id\"] == \"${device_id}\")\n  |> filter(fn: (r) => r[\"point_name\"] == \"${point_name}\")\n  |> filter(fn: (r) => r[\"_field\"] == \"value\")\n  |> last()",
+        "refId": "A"
+      }]
+    },
+    {
+      "datasource": {"type": "influxdb", "uid": "P951FEA4DE68E13C5"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "blue", "value": null}]},
+          "unit": "short"
+        }
+      },
+      "gridPos": {"h": 4, "w": 3, "x": 6, "y": 0},
+      "id": 2,
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "value", "textMode": "value_and_name"},
+      "title": "Device",
+      "type": "stat",
+      "targets": [{
+        "datasource": {"type": "influxdb", "uid": "P951FEA4DE68E13C5"},
+        "query": "from(bucket: \"bas\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"point_update\")\n  |> filter(fn: (r) => r[\"device_id\"] == \"${device_id}\")\n  |> filter(fn: (r) => r[\"point_name\"] == \"${point_name}\")\n  |> filter(fn: (r) => r[\"_field\"] == \"value\")\n  |> keep(columns: [\"device_id\", \"_value\", \"_time\"])\n  |> last()\n  |> map(fn: (r) => ({r with _value: r.device_id}))",
+        "refId": "A"
+      }]
+    },
+    {
+      "datasource": {"type": "influxdb", "uid": "P951FEA4DE68E13C5"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "blue", "value": null}]},
+          "unit": "short"
+        }
+      },
+      "gridPos": {"h": 4, "w": 3, "x": 9, "y": 0},
+      "id": 3,
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "value", "textMode": "value_and_name"},
+      "title": "Unit",
+      "type": "stat",
+      "targets": [{
+        "datasource": {"type": "influxdb", "uid": "P951FEA4DE68E13C5"},
+        "query": "from(bucket: \"bas\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"point_update\")\n  |> filter(fn: (r) => r[\"device_id\"] == \"${device_id}\")\n  |> filter(fn: (r) => r[\"point_name\"] == \"${point_name}\")\n  |> filter(fn: (r) => r[\"_field\"] == \"value\")\n  |> keep(columns: [\"unit\", \"_value\", \"_time\"])\n  |> last()\n  |> map(fn: (r) => ({r with _value: r.unit}))",
+        "refId": "A"
+      }]
+    },
+    {
+      "datasource": {"type": "influxdb", "uid": "P951FEA4DE68E13C5"},
+      "fieldConfig": {
+        "defaults": {"color": {"mode": "palette-classic"}, "unit": "short"},
+        "overrides": []
+      },
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 4},
+      "id": 4,
+      "options": {
+        "tooltip": {"mode": "single"},
+        "legend": {"displayMode": "list", "placement": "bottom"}
+      },
+      "title": "${point_name} — History",
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": {"type": "influxdb", "uid": "P951FEA4DE68E13C5"},
+          "query": "from(bucket: \"bas\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"point_update\")\n  |> filter(fn: (r) => r[\"device_id\"] == \"${device_id}\")\n  |> filter(fn: (r) => r[\"point_name\"] == \"${point_name}\")\n  |> filter(fn: (r) => r[\"_field\"] == \"value\")\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {"type": "influxdb", "uid": "P951FEA4DE68E13C5"},
+      "fieldConfig": {
+        "defaults": {"unit": "short"},
+        "overrides": []
+      },
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 14},
+      "id": 5,
+      "options": {
+        "frameIndex": 0,
+        "showHeader": true,
+        "sortBy": [{"displayName": "Time", "desc": true}]
+      },
+      "title": "${point_name} — Raw Values",
+      "type": "table",
+      "targets": [{
+        "datasource": {"type": "influxdb", "uid": "P951FEA4DE68E13C5"},
+        "query": "from(bucket: \"bas\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"point_update\")\n  |> filter(fn: (r) => r[\"device_id\"] == \"${device_id}\")\n  |> filter(fn: (r) => r[\"point_name\"] == \"${point_name}\")\n  |> filter(fn: (r) => r[\"_field\"] == \"value\")\n  |> keep(columns: [\"_time\", \"_value\", \"point_name\", \"device_id\", \"unit\"])",
+        "refId": "A"
+      }]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "tags": ["bacnet", "daws-bas", "explorer"],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "datasource": {"type": "influxdb", "uid": "P951FEA4DE68E13C5"},
+        "definition": "import \"influxdata/influxdb/schema\"\nschema.tagValues(\n  bucket: \"bas\",\n  tag: \"device_id\",\n  predicate: (r) => r[\"_measurement\"] == \"point_update\"\n)",
+        "hide": 0,
+        "includeAll": false,
+        "multi": false,
+        "name": "device_id",
+        "options": [],
+        "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(\n  bucket: \"bas\",\n  tag: \"device_id\",\n  predicate: (r) => r[\"_measurement\"] == \"point_update\"\n)",
+        "refresh": 2,
+        "regex": "",
+        "sort": 1,
+        "type": "query",
+        "label": "Device",
+        "description": "Select a BACnet device"
+      },
+      {
+        "current": {},
+        "datasource": {"type": "influxdb", "uid": "P951FEA4DE68E13C5"},
+        "definition": "import \"influxdata/influxdb/schema\"\nschema.tagValues(\n  bucket: \"bas\",\n  tag: \"point_name\",\n  predicate: (r) => r[\"_measurement\"] == \"point_update\" and r[\"device_id\"] == \"${device_id}\"\n)",
+        "hide": 0,
+        "includeAll": false,
+        "multi": false,
+        "name": "point_name",
+        "options": [],
+        "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(\n  bucket: \"bas\",\n  tag: \"point_name\",\n  predicate: (r) => r[\"_measurement\"] == \"point_update\" and r[\"device_id\"] == \"${device_id}\"\n)",
+        "refresh": 2,
+        "regex": "",
+        "sort": 1,
+        "type": "query",
+        "label": "Point",
+        "description": "Select a point on the device"
+      }
+    ]
+  },
+  "time": {"from": "now-3h", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "DAWS_BAS — Point Explorer",
+  "uid": "daws-explorer-001",
+  "version": 1
+}
