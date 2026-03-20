@@ -149,7 +149,16 @@ async def run_bacnet_gateway(publisher: Publisher,
                                     "instance":    point.properties.address
                                 }
                             )
-                            publisher.publish(message, "bacnet", point_name)
+                            publisher.publish(
+                                message,
+                                protocol  = "bacnet",
+                                point_name = point_name,
+                                address   = device_address,   # e.g. "192.168.30.54" or "2501:4"
+                                device_id = f"bacnet:{device_id_found}"  # e.g. "bacnet:539035"
+                                # Together these guarantee a unique routing key:
+                                # point.bacnet.192_168_30_54.bacnet_539035.ZN-T
+                                # even if two devices share device IDs or point names
+                            )
                             point_count += 1
 
                         except Exception as e:
@@ -239,7 +248,11 @@ async def _execute_write(bacnet, known_devices: dict,
         publisher.publish(
             confirm,
             protocol   = "command",
-            point_name = f"confirm.{device_label}.{point_name}"
+            point_name = f"confirm.{device_label}.{point_name}",
+            # No address/device_id on confirmations — they use the
+            # fallback format: point.command.confirm.<device_label>.<point_name>
+            # This keeps confirmation routing keys short and predictable
+            # for Node-RED and future UI subscribers
         )
     except Exception as e:
         logger.error(f"Failed to publish write confirmation: {e}")

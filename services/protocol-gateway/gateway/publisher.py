@@ -142,27 +142,88 @@ class Publisher:
         logger.info(f"Connected to RabbitMQ at {self.host}, exchange: {self.exchange}")
 
 
-    def publish(self, message: dict, protocol: str, point_name: str):
+    def publish(self, message: dict, protocol: str, point_name: str,
+                address: str = "", device_id: str = ""):
         """
         Publishes one normalized point update message to RabbitMQ.
 
         Parameters:
             message    - The normalized dict from normalizer.normalize()
             protocol   - Protocol string e.g. "bacnet", "modbus", "mqtt"
-            point_name - Point name string e.g. "red_light", "supply_temp"
+            point_name - Point name string e.g. "ZN-T", "red_light"
+            address    - Network address of the device e.g. "192.168.30.54"
+                         or MSTP route "2501:4". Used in routing key to
+                         guarantee uniqueness even if device IDs are
+                         misconfigured (duplicate IDs on same network).
+            device_id  - The protocol-level device identifier e.g. "bacnet:1"
+                         Combined with address for a fully qualified key.
 
-        The routing key is built from protocol and point_name:
-            "point.bacnet.red_light"
-            "point.modbus.supply_temp"
+        ROUTING KEY FORMAT:
+            point.<protocol>.<address_safe>.<device_id_safe>.<point_name>
 
-        Consumers use wildcard patterns to subscribe:
-            "point.#"         → receive everything
-            "point.bacnet.#"  → receive only BACnet points
+        Examples:
+            point.bacnet.192_168_30_54.bacnet_539035.ZN-T
+            point.bacnet.2501_4.bacnet_1.ZN-T
+            point.traffic.192_168_30_12.traffic_3001.red_light
+
+        WHY ADDRESS + DEVICE_ID BOTH?
+            Address alone:    unique on IP networks, but MSTP devices share
+                              their router's IP — address alone is ambiguous
+                              for MSTP devices on different networks behind
+                              the same router.
+            Device ID alone:  must be unique per BACnet standard, but
+                              misconfiguration happens. Address is the
+                              physical safety net.
+            Together:         survive any single misconfiguration. Two
+                              devices can share an address OR share a device
+                              ID but not both simultaneously.
+
+        CONSUMER WILDCARD PATTERNS:
+            "point.#"                          → everything from all protocols
+            "point.bacnet.#"                   → all BACnet points
+            "point.bacnet.192_168_30_54.#"     → all points on SNE-01
+            "point.bacnet.*.bacnet_1.#"        → device 1 at any address
+            "point.bacnet.*.bacnet_1.ZN-T"     → ZN-T on device 1 only
+            "point.bacnet.#.ZN-T"              → ZN-T on any BACnet device
+
+        BACKWARD COMPATIBILITY:
+            If address and device_id are not provided (e.g. from other
+            protocol handlers not yet updated), the key falls back to the
+            original format: point.<protocol>.<point_name>
+            This ensures Modbus, MQTT, OPC-UA handlers continue to work
+            without change until they are updated in Phase 5.
         """
 
-        # Build the routing key from protocol and point name
-        # This is what RabbitMQ uses to decide which queues get this message
-        routing_key = f"point.{protocol}.{point_name}"
+        # Convert address and device_id to routing-key-safe strings.
+        # RabbitMQ routing keys use dots as word separators — dots and colons
+        # inside field values would be misinterpreted as separators.
+        # We replace both with underscores.
+        #
+        # Examples:
+        #   "192.168.30.54"  →  "192_168_30_54"
+        #   "2501:4"         →  "2501_4"
+        #   "bacnet:539035"  →  "bacnet_539035"
+        #   "bacnet:1"       →  "bacnet_1"
+        def _safe(s):
+            return s.replace(".", "_").replace(":", "_") if s else ""
+
+        # Also sanitize the point_name — BACnet point names can contain
+        # slashes (e.g. "SNE-01/Programming.OA-T") and spaces which are
+        # technically valid in routing keys but confusing. Replace with _.
+        safe_point = point_name.replace(".", "_").replace("/", "_").replace(" ", "_")
+
+        if address and device_id:
+            # Fully qualified routing key — unique for any protocol/device/point
+            # combination even under misconfiguration
+            routing_key = (
+                f"point.{protocol}"
+                f".{_safe(address)}"
+                f".{_safe(device_id)}"
+                f".{safe_point}"
+            )
+        else:
+            # Fallback for protocol handlers not yet providing address/device_id
+            routing_key = f"point.{protocol}.{safe_point}"
 
         # json.dumps() converts a Python dict to a JSON string
         # e.g. {"value": "active"} → '{"value": "active"}'
